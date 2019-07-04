@@ -1,0 +1,38 @@
+---
+title: "Voice lineup study"
+author: "Jens Roeser"
+output: html_document
+bibliography: ref.bib
+---
+
+```{r setup, include=FALSE, echo=FALSE,message=FALSE,warning=FALSE,cache=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(plyr)
+library(tidyverse)
+options(knitr.table.format = 'markdown')
+knitr::opts_chunk$set(fig.pos = 'H')
+library(tinytex)
+library(kableExtra)
+library(formattable)
+library(bayesplot)
+library(rstanarm)
+source("../functions/functions.R")
+set.seed(125)
+
+```
+
+
+# Results
+
+The data were analysed using Bayesian linear mixed effects models (BLMM) [@gelman2014; @kruschke2014doing; @mcelreath2016statistical]. The R package rstanarm [rstanarm] was used for data analysis. The accuracy data were modeled in BLMM with binomial link function. Models were fitted with random intercepts for lineup set and by-linup slope adjustments for all predictor variables. The 95\% posterior probability mass -- 95\% credible intervals (henceforth, CrI) -- was extracted from the posterior samples indicating the range of most probably parameter values for each predictor. Support for a predictor was determined by 95\% CrIs that do not contain zero as possible parameter value [@kruschke2012time].\footnote{Models were fitted with weakly informative priors [see @mcelreath2016statistical] and run with 2,000 iterations, 3 chains with a warm-up of 1,000 iterations. Model convergence was evaluated using the Gelman-Rubin statistic ($\hat{R}$~=~1) [@gelman1992] and traceplots of the Markov chain Monte Carlo chains.}
+
+Chance-level performance was evaluated using the posterior distirbution of the accuracy and in the context of equal variance Gaussian signal detection theory (EVSDT). BLMMs (probit link function) were used to infer the EVSDT model parameters [@decarlo2010statistical; @decarlo1998signal; @rouder2005introduction; @rouder2007signal], the criterion \textit{c} representing noise distribution and \textit{d}' indicating the signal-noise difference (i.e. the signal strength). The EVSDT framework allows the evaluation of whether or not the signal is different from noise (i.e. chance-level performance) and hence the sensitive to the presence of the target voice in the linup.
+
+
+
+# References
+
+
+
+

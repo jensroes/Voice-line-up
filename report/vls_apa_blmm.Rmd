@@ -1,0 +1,523 @@
+---
+title             : "Lab Experiment 1 -- sample duration"
+shorttitle             : "vls"
+
+author: 
+  - name          : "Jens Roeser"
+    affiliation   : "1"
+    address       : "50 Shakespeare St, Nottingham NG1 4FQ"
+    corresponding : yes    # Define only one corresponding author
+    email         : "jens.roeser@ntu.ac.uk"
+
+affiliation:
+  - id            : "1"
+    institution   : "Nottingham Trent University"
+
+bibliography      : ["ref.bib"]
+
+class             : "man"
+#class             : "apa6"
+#output            : papaja::apa6_pdf
+output:
+  word_document: papaja::apa6_word
+  pdf_document: papaja::apa6_pdf
+#  html_document:
+#    df_print: paged
+
+figsintext        : yes
+figurelist        : no
+tablelist         : no
+footnotelist      : no
+lineno            : no
+mask              : no
+#header-includes:
+#   - \usepackage{caption}
+#   - \captionsetup{width=10in}
+---
+
+```{r setup, include=FALSE}
+#knitr::opts_chunk$set(#echo = TRUE, 
+ #                     warning = FALSE, 
+  #                    message = FALSE
+#                      include = FALSE
+          #            )
+```
+
+
+```{r load_packages}
+library(tidyverse)
+library(knitr)
+library(magrittr)
+library(rstanarm)
+library(loo)
+library(papaja)
+library(rethinking)
+source("../functions/functions.R")
+
+```
+
+```{r analysis_preferences}
+# Seed for random number generation
+set.seed(42)
+load(file="../data/VoiceLineUp.Rda")
+d <- d %>% 
+  mutate(exposure = ifelse(exposure == "15s", "15 secs", "30 secs")) %>% 
+  mutate(type = "hit",
+         type = ifelse(order %in% c(3,7) & parade_response == 0, "miss", type),
+         type = ifelse(order == 3 & parade_response %in% c(1,2,4,5,6,7, 8,9), "fa", type),  # Correct rejection
+         type = ifelse(order == 7 & parade_response %in% c(1,2,3, 4,5,6, 8,9), "fa", type),  # Correct rejection
+         type = ifelse(order == 0 & parade_response == 0 , "cr", type))  # False alarm
+
+```
+
+# Method
+
+## Participants
+
+`r printnum(nrow(d))` participants took part in the experiment (`r printnum(table(d$sex)[1])` females, `r printnum(table(d$sex)[2])` males), with an age range of `r printnum(min(d$age), digits=0)`--`r printnum(max(d$age), digits=0)` years ($M$ = `r printnum(mean(d$age))`, $SD$ = `r printnum(sd(d$age))`).
+
+\newpage
+
+# Results
+
+Statistical analysis was performed in Bayesian linear mixed effects models [@gelman2014; @kruschke2014doing; @mcelreath2016statistical] using the $R$ package $rstanarm$ [@rstanarm; @R]. Statistically relevant effects were evaluated via model comparisons using out-of-sample predictions estimated using Pareto smoothed importance-sampling leave-one-out cross-validation (PSIS-LOO) [@vehtari2015pareto; @vehtari2017practical]. Predictive performance of the fitted models was estimated as the sum of the expected log pointwise predictive density ($\widehat{elpd}$) along with its standard error ($SE$). In other words, a higher $\widehat{elpd}$ indicates that the model has better predictive performance than another model. The difference between the predictive quality of the models, and therefore statistically relevant effects, was expressed as $\Delta\widehat{elpd}$ (shown with standard errors [$SE$] of the difference). This means that a positive difference $\Delta\widehat{elpd}$ indicates that a more complex model improved the predictive performance compared to a simpler model; negative $\Delta\widehat{elpd}$ values support the simpler model.
+
+The posterior (statistically inferred) distribution of these models was used to derive the "maximum a posteriori", the most probably value of the true (unknown) effect of interest $\hat{\mu}$ and the 95\% Highest Posterior Densitiy Interval (henceforth, 95\% HPDI), the shortest interval containing 95\% of the posterior probability mass as indication of the certainty range in which the true (unknown) parameter value lies. HPDIs were used, as opposed to percentile intervals (also known as credible intervals), because HPDIs are more suitable for non-symmetric posteriors [@hyndman1996computing;@liu2015simulation], for example, bimodal or skewed posterior distributions as found in the results presented below.
+
+Accounting for the variance associated with stimuli is crucial in experimental psychology. Linear mixed models can be used to account for lineup specific variance by treating it as random effect (intercept) with adjustments for conditional factors that might vary for individual lineup by treating these as random slopes (details on the model specification can be found below) [@baa08]. Frequentist, as opposed to Bayesian, linear mixed models are notorious to be subject to overparametrisation, as indicated by convergence failure for maximal random effects structures [@barr2013random; @bates2015parsimonious]. This is usually related to an inbalance of model complexity and sample size and is not suitable for statistical inference. This, however, is not a problem in Bayesian settings as models will, by definition, converge as the number of iterations approach infinity. Further, Bayesian models allow us to use posterior distributions to test our research hypotheses. The advantages of using a Bayesian framework for hypothesis testing is well documented in the literature [@kruschke2012time; @kruschke2014doing; @lambert2018student; @nicenboim2016statistical; @sorensen2015bayesian].
+
+
+
+
+## Descriptive analysis
+
+The descriptive data for the response accuracy (in \%) and the confidence ratings can be found in Table \ref{tab:accuracy}.
+
+
+
+```{r, results='asis'}
+acc.desc <- d %>% mutate(Target = ifelse(TP == 0, "Absent", "Present"),
+             `Sample duration` = exposure) %>% 
+  group_by(Target, `Sample duration`) %>%
+  dplyr::summarise(M = mean(acc)*100,
+            SD = sd(acc)*100,
+            N = n(),
+            M2 = median(conf, na.rm = T),
+            SD2 = sd(conf, na.rm = T),
+            N2= length(which(!is.na( conf ))) )
+
+
+acc.desc$N <- as.factor(round(acc.desc$N,0))
+acc.desc$N2 <- as.factor(round(acc.desc$N2,0))
+names(acc.desc)[3:8] <- c("Mean", "\\textit{SD}", "\\textit{N}", "Median", "\\textit{SD}", "\\textit{N}")
+#acc.desc[,-c(1,2)] <- printnum(acc.desc[,-c(1,2)])
+
+papaja::apa_table(acc.desc
+                  , align = c("l", "l",  rep("r", 6)), 
+                  escape = FALSE, 
+                  placement = "h",
+                  caption = "\\label{tab:accuracy}Mean accuracy in \\% and median confidence ratings with standard deviations (SD) and number of observations (N).",
+                  col_spanners = list(`Accuracy` = c(3, 5), `Confidence` = c(6, 8))
+                  )
+                  
+```
+
+For the target present lineups, the correct target identifications (hits), the incorrect rejections (misses), and false target identifications (false alarm) are shown in Table \ref{tab:signal} with the proportions shown in parentheses.
+
+```{r, results='asis'}
+sdt <- d %>% 
+  filter(TP == 1) %>%
+  mutate(`Sample duration` = exposure) %>% 
+  select(`Sample duration`, type) %>%
+  group_by(`Sample duration`) %>%
+  summarise(Hit2 = sum(type == "hit"),
+            Miss2 = sum(type == "miss"),
+            `False alarm2` = sum(type == "fa")
+)
+
+Total <- nrow(d[d$TP ==1, ])
+`Sample duration` <- as.character(paste0("Total (\\textit{N} = ", Total, ")"))
+
+marg <- sdt %>% summarise(Hit2 = sum(Hit2),
+                          Miss2 = sum(Miss2),
+                          `False alarm2` = sum(`False alarm2`)
+) %>%
+  mutate(Hit = paste0(Hit2," (", 
+                      substr(as.character(
+                        round(sum(Hit2)/sum(c(Hit2, Miss2, `False alarm2`)),2)
+                        ), start = 2, stop = 4), ")"),
+               Miss = paste0(Miss2," (", 
+                             substr(as.character(
+                               round(sum(Miss2)/sum(c(Hit2, Miss2, `False alarm2`)),2)
+                               ) , start = 2, stop = 4), ")"),
+               `False alarm` = paste0(`False alarm2`," (", 
+                                      substr(as.character(
+                                        round(sum(`False alarm2`)/sum(c(Hit2, Miss2, `False alarm2`)),2)
+                                        ), start = 2, stop = 4), ")"))  %>% 
+  select(-Miss2,-Hit2,-`False alarm2`)
+
+sdt2 <- sdt %>% group_by(`Sample duration`) %>% 
+  mutate(Hit = paste0(Hit2," (", 
+                      substr(as.character(
+                        round(sum(Hit2)/sum(c(Hit2, Miss2, `False alarm2`)),2)
+                        ), start = 2, stop = 4), ")"),
+               Miss = paste0(Miss2," (", 
+                             substr(as.character(round(sum(Miss2)/sum(c(Hit2, Miss2, `False alarm2`)),2)
+                                                 ), start = 2, stop = 4), ")"),
+               `False alarm` = paste0(`False alarm2`," (", 
+                                      substr(as.character(
+                                        round(sum(`False alarm2`)/sum(c(Hit2, Miss2, `False alarm2`)),2)
+                                        ), start = 2, stop = 4), ")")) %>% 
+  select(-Miss2,-Hit2,-`False alarm2`)
+
+marg2 <- cbind(`Sample duration`,marg) %>%
+  mutate(`Sample duration` = as.character(`Sample duration`))
+
+tab.fin <- bind_rows(sdt2, marg2)
+
+papaja::apa_table(tab.fin
+                  , align = c("l", rep("r", 3)), 
+                  escape = FALSE, 
+                  placement = "h",
+                  caption = "\\label{tab:signal}Target present responses: frequency of hits, misses and false alarms. Proportions in parentheses."
+                  )
+                  
+```
+
+
+## Response accuracy
+
+The accuracy data were analysed as binary responses (0 = inaccurate, 1 = accurate) in Bayesian linear mixed effects models with binomial link function. Models were fitted with maximal random effects structure [@barr2013random; @bates2015parsimonious]; random intercepts were included for different lineups with slope-adjustments for target order, target (present, absent), sample duration (15 secs, 30 secs) and all interaction terms. Model predictors -- target, sample duration and their interaction term -- were added incrementally to the intercept only model. 
+
+
+```{r warning=FALSE}
+# Model comparisons
+# Pareto smoothed importance-sampling leave-one-out cross-validation (PSIS-LOO) 
+load(file="../stanout/BGLMNULL2000iter3chains.rda")
+m <- m
+loo.m <- rstanarm::loo(m)
+rm("m")
+load(file="../stanout/BGLMTP2000iter3chains.rda")
+m.tp <- m.tp
+loo.m.tp <- loo(m.tp)
+
+load(file="../stanout/BGLMexposure2000iter3chains.rda")
+m.exposure <- m.exposure
+loo.m.exposure <- loo(m.exposure)
+rm("m.exposure")
+
+load(file="../stanout/BGLMTPexposure2000iter3chains.rda")
+m.tp.exposure <- m.tp.exposure
+loo.m.tp.exposure <- loo(m.tp.exposure)
+rm("m.tp.exposure")
+
+load(file="../stanout/BGLMTPexposureinter2000iter3chains.rda")
+m.tp.exposure.inter <- m.tp.exposure.inter
+loo.m.tp.exposure.inter <- loo(m.tp.exposure.inter)#, k_threshold = 0.7
+#rm("m.tp.exposure.inter")
+
+
+```
+
+
+```{r }
+# Difference between expected log pointwise deviance between the two models: difference after taking into account that the second model estimates an additional parameter. The “LOO Information Criterion (LOOIC)”
+
+M.all <- loo::compare(loo.m,loo.m.tp,loo.m.exposure,loo.m.tp.exposure,loo.m.tp.exposure.inter)
+M.all <- as.data.frame(M.all[,c(1:4)])
+M.all$Models <- rownames(M.all)
+rownames(M.all) <- NULL
+M.all <- M.all[,c(5,1:4)]
+M.all %<>% mutate_at(vars(-Models), funs(round(., 2)))
+write_csv(M.all, "../exp1_accuracy_model_comparisons.csv")
+```
+
+```{r }
+# There are a couple of moderate outliers (whose statistics are greater than 0.5),
+# should not have too much of an effect on the resulting model comparison (at least not model 2 and 3)
+M01 <- compare(loo.m,loo.m.tp)
+M02 <- compare(loo.m,loo.m.exposure)
+M13 <- compare(loo.m.tp,loo.m.tp.exposure)
+M34 <- compare(loo.m.tp.exposure,loo.m.tp.exposure.inter)
+M.diff <- as.data.frame(rbind(M01,M02,M13,M34))
+M.diff$Models <- rownames(M.diff)
+rownames(M.diff) <- NULL
+M.diff <- M.diff[,c(3,1,2)]
+```
+
+
+The model with the main effect for target showed the highest predictive performance ($\widehat{elpd}$ = `r printnum(loo.m.tp$elpd_loo)`, $SE$ = `r printnum(loo.m.tp$se_elpd_loo)`). Model comparisons showed that adding the main effect of lineup to the intercept only model ($\widehat{elpd}$ = `r printnum(loo.m$elpd_loo)`, $SE$ = `r printnum(loo.m$se_elpd_loo)`) increased the predictive performance ($\Delta\widehat{elpd}$ = `r printnum(M.diff[1,]$elpd_diff)`, $SE$ = `r printnum(M.diff[1,]$se)`). Adding the main effect exposure to the intercept only model decreased predictive performance ($\Delta\widehat{elpd}$ = `r printnum(M.diff[2,]$elpd_diff)`, $SE$ = `r printnum(M.diff[2,]$se)`); also, compared to the model with main effects for target and exposure duration ($\widehat{elpd}$ = `r printnum(loo.m.tp.exposure$elpd_loo)`, $SE$ = `r printnum(loo.m.tp.exposure$se_elpd_loo)`), including the interaction term rendered lower predictive performance ($\Delta\widehat{elpd}$ = `r printnum(M.diff[3,]$elpd_diff)`, $SE$ = `r printnum(M.diff[3,]$se)`). Therefore, our inference is drawn from the statistical model with the main effect for target.
+
+
+```{r include=FALSE}
+# ----------------------
+# Extract conditional posteriors
+samples = get_samples(
+  stan_out = m.tp
+  , pars_to_keep = c("alpha[1]", paste("beta", "[", 1, "]", sep=""))
+)
+
+# First convert then get the difference for posterior samples
+# First add then convert to get posterior condition values
+TPprob <- pnorm(samples[samples$Parameter == "beta[1]",]$value)*100
+tpmu <- dmode(TPprob)
+tpCI <- HPDI(TPprob, prob = .95)
+
+```
+
+
+The posterior distribution for the predictor target revealed that responses are more accurate by $\hat{\mu}$=`r printnum(tpmu)`% for lineups that included the target compared to lineups that did not include the target (95% HPDI [`r printnum(tpCI[1])`%, `r printnum(tpCI[2])`%]). 
+
+
+
+
+```{r include=FALSE}
+pp <- samples %>% 
+  spread(Parameter, value) %>% 
+  select(-Iteration, -Chain) %>%
+  mutate(TP0 = `alpha[1]` + `beta[1]`,
+         TP1 = `alpha[1]` - `beta[1]`) %>%
+  select(TP0, TP1) %>% 
+  mutate(TP0 = pnorm(TP0),
+         TP1 = pnorm(TP1)) %>%
+  gather(value = post, key = cond ) %>%
+  mutate(post = post * 100)
+
+
+d.sum <- pp %>% dplyr::group_by(cond) %>%
+  dplyr::summarise(#M = median(post),
+            lower = HPDI(post, prob = .95)[1],
+            upper = HPDI(post, prob = .95)[2]
+          ) %>%
+  ungroup() %>%
+  mutate(TP = ifelse(cond == "TP0", "Target absent", "Target present")) %>% 
+  select(-cond)
+
+```
+
+```{r include=FALSE}
+# Credible intervals for target absent trials
+TP0CI <- d.sum %>% 
+  filter(TP == "Target absent") %>% 
+  select(lower, upper) 
+
+# Credible intervals for target present trials
+TP1CI <- d.sum %>% 
+  filter(TP == "Target present") %>% 
+  select(lower, upper) 
+
+```
+
+
+Chance performance for lineups is 10\%. The 95\% HPDI for target absent lineups contained 10\% chance-level performance (95\% HPDI [`r printnum(pull(TP0CI[,1]))`%, `r printnum(pull(TP0CI[,2]))`%]) and is thus not different from chance. Accuracy for target present lineups was above chance (95% HPDI [`r printnum(pull(TP1CI[,1]))`%, `r printnum(pull(TP1CI[,2]))`%]). 
+
+```{r include=FALSE}
+
+# Use posterior samples of interaction model !!!!
+pp <- as.data.frame(m.tp.exposure.inter, pars = c("(Intercept)", "TP1", "exposure1", "TP1:exposure1")) %>%
+  mutate(alpha = `(Intercept)`, 
+         beta1 = TP1,
+         beta2 = exposure1,
+         beta3 = `TP1:exposure1`) %>%
+  select(alpha, beta1, beta2, beta3) %>%
+  mutate(TP0_15s = alpha + beta1 + beta2 + beta3,
+         TP1_15s = alpha - beta1 + beta2 - beta3,
+         TP0_30s = alpha + beta1 - beta2 - beta3,
+         TP1_30s = alpha - beta1 - beta2 + beta3) %>%
+  select(-(alpha:beta3)) %>%
+  gather(TP_exposure, prob) %>%
+  mutate(prob = pnorm(prob)*100) %>%
+  separate(TP_exposure, into = c("TP", "exposure"), sep = "_") %>%
+  mutate(TP = ifelse(TP == "TP0", "Target: absent", "Target: present"),
+         exposure = ifelse(exposure == "15s", "15 secs", "30 secs"))
+
+pp15 <- mean(pp[pp$exposure == "15 secs",]$prob < 10)*100
+pp30 <- mean(pp[pp$exposure == "30 secs",]$prob < 10)*100
+
+ppdif <- pp15 - pp30
+
+```
+
+The posterior distribution of the interaction model was used to assess chance-level performance for each sample duration type. Figure \ref{fig:probdist2} illustrates the posterior probability distributions for each sample duration. Using the reparametrised posterior distributions derived from the statistical allows direct statistical inference. For each sample duration we observe a bimodal distribution representing target absent and target present trials, displayed in red and green, respectively. Horizontal bars indicate the 95\% HPDI. For both samples durations we can see that the 95\% HPDI contains chance-level performance (10\%).\footnote{Note that we used the interaction model rather than the model with the highest predictive performance to display the posterior probability ranges of all conditions, including each sample duration, and to allow for variation between the levels of each factor.} From these posterior distributions we can infer that the posterior probability mass below chance-level (10\%) is `r printnum(pp15)`% for sample durations of 15 secs and `r printnum(pp30)`% for 30 secs sample duration, thus revealing a better performance for 30 secs sample duration by `r printnum(ppdif)`% less responses below chance-level.
+
+
+```{r warning = FALSE, fig4, fig.pos="!h", fig.align = "center", fig.cap="\\label{fig:probdist2}Posterior probability distribution of inferred response accuracy. The posterior probability is shown by sample duration to illustrate the performance against chance-level (10\\%). The dashed line indicates chance-level performance. The horizontal bars indicate 95\\% HPDIs, the range of containing the posterior probability for target absent and target present by sample duration. The accuracy for target absent lineups and target present lineups are displayed in red and green, respectively."}
+
+chanceexp <- pp %>% 
+   mutate(exposure = ifelse(exposure == "15 secs", "Sample duration:\n 15 secs", "Sample duration:\n 30 secs")) %>%
+  dplyr::group_by(exposure) %>%
+  dplyr::summarise(M = dmode(prob),
+            lower = HPDI(prob, prob = .95)[1],
+            upper = HPDI(prob, prob = .95)[2]
+          ) %>%
+  ungroup() %>%
+  mutate(TP = "TP1",
+         prob = .1)
+
+postprob <- pp %>% 
+  mutate(exposure = ifelse(exposure == "15 secs", "Sample duration:\n 15 secs", "Sample duration:\n 30 secs")) %>%
+  ggplot(aes(x = prob, fill=TP)) + 
+  geom_density(alpha=.2, size = .1, adjust =1) +
+  facet_grid(exposure~.) +
+  geom_vline(aes(xintercept=10), linetype="dashed", size=.5) +
+  geom_text(data = chanceexp, aes(x=lower+.3, label= paste0(round(lower,2), "%\n"), y = .0475), colour="black", vjust = 1.2,  text=element_text(size=8)) +
+  geom_text(data = chanceexp, aes(x=upper-.5, label= paste0(round(upper,2), "%\n"), y = .0475), colour="black", vjust = 1.2,  text=element_text(size=8)) +
+#  geom_text(data = chanceexp, aes(x=(upper-lower)/2, label= "95% HPDI", y = .04), colour="black", vjust = 1.2,  text=element_text(size=4)) +
+  geom_errorbarh(data = chanceexp, aes(y = .02, xmax = upper, xmin = lower, height = .01)) +
+  theme_apa() +
+  ylab(expression(paste("Posterior probability" ))) + # hat(y)
+  xlab("Accuracy (in %)") +
+  scale_x_continuous(breaks =seq(0, 100, 10)) +
+  scale_fill_manual(values = c("darkred", "darkgreen", "pink")) +
+  theme(
+    legend.position = "none",
+    axis.text.y = element_blank(),
+    strip.text.y = element_text(size = 10, angle = 360),
+    axis.ticks = element_blank(),
+    axis.title = element_text(size = 11),
+    axis.text = element_text(size = 10),
+    panel.background = element_rect(fill = "transparent",colour = NA),
+    plot.background = element_rect(fill = "transparent",colour = NA)
+  )
+
+path <- "../plots/exp1_lab_probdist_byexposure.pdf"
+ggsave(path, width = 6, height = 4)
+include_graphics(path, dpi = 400)
+```
+
+
+```{r}
+p10 <- pp %>% group_by(TP, exposure) %>%
+  summarise(p10 = mean(prob < 10)*100) %>%
+  ungroup()
+
+```
+
+Figure \ref{fig:postacc} shows the posterior probability intervals of the inferred accuracy values with comparisons against chance-level performance for each condition. From these posterior distributions we can infer the posterior probability mass below chance-level (10\%). For target absent trials we found a below chance-level performance of `r printnum(pull(p10[1,3]))`% for sample durations of 15 secs and `r printnum(pull(p10[2,3]))`% for 30 secs sample duration. For target present trials we found a below chance-level performance of `r printnum(pull(p10[3,3]))`% for sample durations of 15 secs and `r printnum(pull(p10[4,3]))`% for 30 secs sample duration.
+
+
+```{r fig2, fig.pos="!h", fig.align = "center", fig.cap="\\label{fig:postacc}Posterior probability intervals of accuracy values. The dots indicate $\\hat{\\mu}$, the most probable parameter value, and error bars show the 95\\% HPDI for each condition interred from the interaction model. Dashed lines indicate chance-level. Chance-level performance was found for conditions in which the HPDI crosses the dashed line."}
+
+p.acc <- pp %>% dplyr::group_by(TP, exposure) %>%
+  dplyr::summarise(M = median(prob),
+                   M2 = mean(prob),
+                   M3 = dmode(prob),
+                  lower = HPDI(prob, prob = .95)[1],#quantile(prob, probs = c(0.025)),
+                  upper = HPDI(prob, prob = .95)[2]#quantile(prob, probs = c(0.975))
+            ) %>%
+  ungroup() %>%
+  ggplot(aes(y =  M3, x = exposure)) + 
+  theme_minimal() +
+  facet_grid(~TP) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), size =.75, width  =.05) +
+  geom_line() +
+  geom_point() +
+  scale_y_continuous(breaks = seq(0,100, 10)) +
+  geom_hline(yintercept = 10, linetype = "dashed", size =.2) +
+  ylab("Posterior accuracy (in %)\n") +
+  xlab("\nSample duration") +
+  theme(strip.text = element_text(face = "italic", size = 11),
+        axis.title = element_text(size = 11),
+        axis.text = element_text(size = 10),
+        panel.grid.minor = element_blank())
+
+path <- "../plots/exp1_lab_acc.pdf"
+ggsave(path, width = 6, height = 3.5)
+include_graphics(path, dpi = 400)
+```
+
+
+
+
+
+## Confidence ratings
+
+Confidence ratings were analysed in Negative Binomial mixed effects models. Models were fitted with maximal random effects structure [@barr2013random; @bates2015parsimonious]; random intercepts were included for lineup items with slope-adjustments for target order, target (present, absent), sample duration (15 secs, 30 secs), accuracy (inaccurate, accurate) and all interaction terms.
+
+
+
+```{r echo=FALSE, warning=FALSE}
+# Model comparisons
+# Pareto smoothed importance-sampling leave-one-out cross-validation (PSIS-LOO) 
+load(file="../stanout/CONFBGLMNULL2000iter3chains.rda")
+m <- m
+load(file="../stanout/CONFBGLMTP2000iter3chains.rda")
+m.tp <- m.tp
+load(file="../stanout/CONFBGLMacc2000iter3chains.rda")
+m.acc <- m.acc
+load(file="../stanout/CONFBGLMexposure2000iter3chains.rda")
+m.exposure <- m.exposure
+load(file="../stanout/CONFBGLMTPaccexposure2000iter3chains.rda")
+m.tp.acc.exposure <- m.tp.acc.exposure
+load(file="../stanout/CONFBGLM2wayinters2000iter3chains.rda")
+m.2.way.inter <- m.2.way.inter
+load(file="../stanout/CONFBGLM3wayinters2000iter3chains.rda")
+m.3.way.inter <- m.3.way.inter
+
+loo.m <- loo(m)
+loo.m.acc <- loo(m.acc)
+loo.m.tp <- loo(m.tp)
+loo.m.exposure <- loo(m.exposure)
+loo.m.tp.acc.exposure <- loo(m.tp.acc.exposure)
+loo.m.2.way.inter <- loo(m.2.way.inter)
+loo.m.3.way.inter <- loo(m.3.way.inter)
+```
+
+```{r results='asis'}
+# Difference between expected log pointwise deviance between the two models: difference after taking into account that the second model estimates an additional parameter. The “LOO Information Criterion (LOOIC)”
+M.all <- loo::compare(loo.m, loo.m.acc, loo.m.tp, loo.m.exposure, loo.m.tp.acc.exposure, loo.m.2.way.inter,loo.m.3.way.inter)
+M.all <- as.data.frame(M.all[,c(1:4)])
+M.all$Models <- rownames(M.all)
+rownames(M.all) <- NULL
+M.all <- M.all[,c(5,1:4)]
+M.all %<>% mutate_at(vars(-Models), funs(round(., 2)))
+write_csv(M.all, "../exp1_confidence_model_comparisons.csv")
+```
+
+
+```{r echo=FALSE,results='asis'}
+# There are a couple of moderate outliers (whose statistics are greater than 0.5),
+# should not have too much of an effect on the resulting model comparison (at least not model 2 and 3)
+M01 <- compare(loo.m,loo.m.tp)
+M02 <- compare(loo.m,loo.m.acc)
+M03 <- compare(loo.m,loo.m.exposure)
+M04 <- compare(loo.m,loo.m.tp.acc.exposure)
+M45 <- compare(loo.m.tp.acc.exposure,loo.m.2.way.inter)
+M56 <- compare(loo.m.2.way.inter,loo.m.3.way.inter)
+
+M.diff <- as.data.frame(rbind(M01,M02,M03,M04,M45,M56))
+M.diff$Models <- rownames(M.diff)
+rownames(M.diff) <- NULL
+M.diff <- M.diff[,c(3,1,2)]
+```
+
+
+Confidence ratings were modeled with the predictors accuracy, target, sample duration and all interaction terms. Model predictors were added incrementally to the intercept only model ($\widehat{elpd}$ = `r printnum(loo.m$elpd_loo)`, $SE$ = `r printnum(loo.m$se_elpd_loo)`). Model comparisons revealed negative predictive differences between the intercept only model and the main effects models. Hence, adding main effects to the model did not improve the predictive performance of the model. In particular, lower predictive performance, compared to the intercept only model, was found for the main effect target ($\Delta$$\widehat{elpd}$ = `r printnum(M.diff[1,]$elpd_diff)`, $SE$ = `r printnum(M.diff[1,]$se)`), accuracy ($\Delta\widehat{elpd}$ = `r printnum(M.diff[2,]$elpd_diff)`, $SE$ = `r printnum(M.diff[2,]$se)`) and sample duration ($\Delta\widehat{elpd}$ = `r printnum(M.diff[3,]$elpd_diff)`, $SE$ = `r printnum(M.diff[3,]$se)`). Further, adding two-way interactions to a model with all main effects did not improve the predictive performance for confidence ratings ($\Delta\widehat{elpd}$ = `r printnum(M.diff[5,]$elpd_diff)`, $SE$ = `r printnum(M.diff[5,]$se)`), nor did the three-way interaction improve the predictive performance of the model compared to the two-way interaction model ($\Delta\widehat{elpd}$ = `r printnum(M.diff[6,]$elpd_diff)`, $SE$ = `r printnum(M.diff[6,]$se)`). Therefore, the intercept only model was found to have the highest predictive performance suggesting that confidence ratings remained consistent across accuracy and target availability. 
+
+
+```{r}
+samps <- as.data.frame(m, pars = "(Intercept)")
+samps.conf <- exp(samps$`(Intercept)`)
+conf.m <- dmode(samps.conf)
+conf.CI <- HPDI(samps.conf, prob = .95)
+```
+
+The posterior distribution for the confidence ratings showed a most probable value of $\hat{\mu}$ = `r printnum(conf.m)` (95% HPDI [`r printnum(conf.CI[1])`, `r printnum(conf.CI[2])`]). This shows that participants' confidence about their response accuracy was generally neither low or high (confidence scale 0 to 10) and importantly, confidence ratings remained consistent across, target present and target absent lineups, response accuracy, and sample duration.
+
+
+
+
+
+\newpage
+
+# References
+```{r create_r-references, echo=FALSE}
+r_refs(file = "ref.bib")
+```
+
+\begingroup
+\setlength{\parindent}{-0.5in}
+\setlength{\leftskip}{0.5in}
+
+<div id = "refs"></div>
+\endgroup

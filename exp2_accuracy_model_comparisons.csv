@@ -1,0 +1,6 @@
+Models,elpd_diff,se_diff,elpd_loo,se_elpd_loo
+m.tp.serial,0,0,-48.21,6.08
+m.serial,-0.01,1.61,-48.22,5.72
+m.tp,-0.23,1.79,-48.44,5.69
+m,-0.5,2.43,-48.7,5.5
+m.tp.serial.inter,-1.1,0.56,-49.31,6.29

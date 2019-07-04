@@ -1,0 +1,6 @@
+Models,elpd_diff,se_diff,elpd_loo,se_elpd_loo
+loo.m.tp,0,0,-43.81,5.86
+loo.m.tp.exposure,-1.13,0.45,-44.94,6.09
+loo.m.tp.exposure.inter,-2.61,1.5,-46.41,6.72
+loo.m,-3.94,2.1,-47.74,5.68
+loo.m.exposure,-4.48,2.21,-48.29,5.89

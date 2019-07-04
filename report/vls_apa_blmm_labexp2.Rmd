@@ -1,0 +1,504 @@
+---
+title             : "Lab Experiment 2 -- parade type"
+shorttitle             : "vls"
+
+author: 
+  - name          : "Jens Roeser"
+    affiliation   : "1"
+    address       : "50 Shakespeare St, Nottingham NG1 4FQ"
+    corresponding : yes    # Define only one corresponding author
+    email         : "jens.roeser@ntu.ac.uk"
+
+affiliation:
+  - id            : "1"
+    institution   : "Nottingham Trent University"
+
+bibliography      : ["ref.bib"]
+
+class             : "man"
+#class             : "apa6"
+output            : papaja::apa6_word # apa6_pdf
+figsintext        : yes
+figurelist        : no
+tablelist         : no
+footnotelist      : no
+lineno            : no
+mask              : no
+#header-includes:
+#   - \usepackage{caption}
+#   - \captionsetup{width=10in}
+---
+
+```{r load_packages, include = FALSE, warning=FALSE}
+library(tidyverse)
+library(knitr)
+library(rethinking)
+library(rstanarm)
+library(loo)
+source("../functions/functions.R")
+library(papaja)
+```
+
+```{r analysis_preferences, include=FALSE}
+# Seed for random number generation
+set.seed(42)
+load(file="../data/VoiceLineUpExp2.Rda")
+d <- d %>% 
+  mutate(presentation = ifelse(serial == 1, "Serial", "Sequential"),
+        type = "hit",
+         type = ifelse(order %in% c(3,7) & parade_response == 0, "miss", type),
+         type = ifelse(order == 3 & parade_response %in% c(1,2,4,5,6,7,8,9), "fa", type),  # Correct rejection
+         type = ifelse(order == 7 & parade_response %in% c(1,2,3,4,5,6,8,9), "fa", type),  # Correct rejection
+         type = ifelse(order == 0 & parade_response == 0 , "cr", type))  # False alarm
+
+
+```
+
+# Method
+
+## Participants
+
+`r printnum(nrow(d))` participants took part in the experiment (`r printnum(table(d$sex)[1])` females, `r printnum(table(d$sex)[2])` males), with an age range of `r printnum(min(d$age), digits=0)`--`r printnum(max(d$age), digits=0)` years ($M$ = `r printnum(mean(d$age))`, $SD$ = `r printnum(sd(d$age))`).
+
+\newpage
+
+# Results
+
+Statistical analysis was performed in Bayesian linear mixed effects models [@gelman2014; @kruschke2014doing; @mcelreath2016statistical] using the $R$ package $rstanarm$ [@rstanarm; @R]. Statistically relevant effects were evaluated via model comparisons using out-of-sample predictions estimated using Pareto smoothed importance-sampling leave-one-out cross-validation (PSIS-LOO) [@vehtari2015pareto; @vehtari2017practical]. Predictive performance of the fitted models was estimated as the sum of the expected log pointwise predictive density ($\widehat{elpd}$) along with its standard error ($SE$). In other words, a higher $\widehat{elpd}$ indicates that the model has better predictive performance than another model. The difference between the predictive quality of the models, and therefore statistically relevant effects, was expressed as $\Delta\widehat{elpd}$ (shown with standard errors [$SE$] of the difference). This means that a positive difference $\Delta\widehat{elpd}$ indicates that a more complex model improved the predictive performance compared to a simpler model; negative $\Delta\widehat{elpd}$ values support the simpler model.
+
+The posterior (statistically inferred) distribution of these models was used to derive the "maximum a posteriori", the most probably value of the true (unknown) effect of interest $\hat{\mu}$ and the 95\% Highest Posterior Densitiy Interval (henceforth, 95\% HPDI), the shortest interval containing 95\% of the posterior probability mass as indication of the certainty range in which the true (unknown) parameter value lies. HPDIs were used, as opposed to percentile intervals (also known as credible intervals), because HPDIs are more suitable for non-symmetric posteriors [@hyndman1996computing;@liu2015simulation], for example, bimodal or skewed posterior distributions as found in the results presented below.
+
+Accounting for the variance associated with stimuli is crucial in experimental psychology. Linear mixed models can be used to account for lineup specific variance by treating it as random effect (intercept) with adjustments for conditional factors that might vary for individual lineup by treating these as random slopes (details on the model specification can be found below) [@baa08]. Frequentist, as opposed to Bayesian, linear mixed models are notorious to be subject to overparametrisation, as indicated by convergence failure for maximal random effects structures [@barr2013random; @bates2015parsimonious]. This is usually related to an inbalance of model complexity and sample size and is not suitable for statistical inference. This, however, is not a problem in Bayesian settings as models will, by definition, converge as the number of iterations approach infinity. Further, Bayesian models allow us to use posterior distributions to test our research hypotheses. The advantages of using a Bayesian framework for hypothesis testing is well documented in the literature [@kruschke2012time; @kruschke2014doing; @lambert2018student; @nicenboim2016statistical; @sorensen2015bayesian].
+
+## Descriptive analysis
+
+The descriptive data for the response accuracy (in \%) and the confidence ratings can be found in Table \ref{tab:accuracy}.
+
+```{r, results='asis'}
+# by exposure
+acc.desc <- d %>% mutate(Target = ifelse(TP == 0, "Absent", "Present"),
+             `Parade type` = presentation) %>% 
+  group_by(Target, `Parade type`) %>%
+  summarise(M = mean(acc)*100,
+            SD = sd(acc)*100,
+            N = n(),
+            M2 = median(conf, na.rm = T),
+            SD2 = sd(conf, na.rm = T),
+            N2= length(which(!is.na( conf ))) )
+
+acc.desc$N <- as.factor(round(acc.desc$N,0))
+acc.desc$N2 <- as.factor(round(acc.desc$N2,0))
+names(acc.desc)[3:8] <- c("Mean", "\\textit{SD}", "\\textit{N}", "Median", "\\textit{SD}", "\\textit{N}")
+#acc.desc[,-c(1,2)] <- printnum(acc.desc[,-c(1,2)])
+papaja::apa_table(acc.desc
+                  , align = c("l", "l",  rep("r", 6)), 
+                  escape = FALSE, 
+                  placement = "h",
+                  caption = "\\label{tab:accuracy}Mean accuracy in \\% and median confidence ratings with standard deviations (SD) and number of observations (N).",
+                  col_spanners = list(`Accuracy` = c(3, 5), `Confidence` = c(6, 8))
+                  )
+                  
+```
+
+For the target present lineups, the correct target identifications (hits), the incorrect rejections (misses), and false target identifications (false alarm) are shown in Table \ref{tab:signal} with the proportions shown in parentheses.
+
+
+```{r, results='asis'}
+sdt <- d %>% 
+  filter(TP == 1) %>%
+  mutate(`Parade type` = presentation) %>% 
+  select(`Parade type`, type) %>%
+  group_by(`Parade type`) %>%
+  summarise(Hit2 = sum(type == "hit"),
+            Miss2 = sum(type == "miss"),
+            `False alarm2` = sum(type == "fa")
+)
+
+Total <- nrow(d[d$TP ==1, ])
+`Parade type` <- as.character(paste0("Total (\\textit{N} = ", Total, ")"))
+
+marg <- sdt %>% summarise(Hit2 = sum(Hit2),
+                          Miss2 = sum(Miss2),
+                          `False alarm2` = sum(`False alarm2`)
+) %>%
+  mutate(Hit = paste0(Hit2," (", 
+                      substr(as.character(
+                        round(sum(Hit2)/sum(c(Hit2, Miss2, `False alarm2`)),2)
+                        ), start = 2, stop = 4), ")"),
+               Miss = paste0(Miss2," (", 
+                             substr(as.character(
+                               round(sum(Miss2)/sum(c(Hit2, Miss2, `False alarm2`)),2)
+                               ) , start = 2, stop = 4), ")"),
+               `False alarm` = paste0(`False alarm2`," (", 
+                                      substr(as.character(
+                                        round(sum(`False alarm2`)/sum(c(Hit2, Miss2, `False alarm2`)),2)
+                                        ), start = 2, stop = 4), ")"))  %>% 
+  select(-Miss2,-Hit2,-`False alarm2`)
+
+sdt2 <- sdt %>% group_by(`Parade type`) %>% 
+  mutate(Hit = paste0(Hit2," (", 
+                      substr(as.character(
+                        round(sum(Hit2)/sum(c(Hit2, Miss2, `False alarm2`)),2)
+                        ), start = 2, stop = 4), ")"),
+               Miss = paste0(Miss2," (", 
+                             substr(as.character(round(sum(Miss2)/sum(c(Hit2, Miss2, `False alarm2`)),2)
+                                                 ), start = 2, stop = 4), ")"),
+               `False alarm` = paste0(`False alarm2`," (", 
+                                      substr(as.character(
+                                        round(sum(`False alarm2`)/sum(c(Hit2, Miss2, `False alarm2`)),2)
+                                        ), start = 2, stop = 4), ")")) %>% 
+  select(-Miss2,-Hit2,-`False alarm2`)
+
+marg2 <- cbind(`Parade type`,marg) %>%
+  mutate(`Parade type` = as.character(`Parade type`))
+
+tab.fin <- bind_rows(sdt2, marg2)
+
+papaja::apa_table(tab.fin
+                  , align = c("l", rep("r", 3)), 
+                  escape = FALSE, 
+                  placement = "h",
+                  caption = "\\label{tab:signal}Target present responses: frequency of hits, misses and false alarms. Proportions in parentheses."
+                  )
+                  
+```
+
+
+
+## Response accuracy
+
+The accuracy data were analysed as binary responses (0 = inaccurate, 1 = accurate) in Bayesian linear mixed effects models with binomial link function. Models were fitted with maximal random effects structure [@barr2013random; @bates2015parsimonious]; random intercepts were included for different lineup items with slope-adjustments for target order, target (present, absent), parade type (serial, sequential) and all interaction terms. Model predictors -- target, parade type and their interaction term -- were added incrementally to the intercept only model and compared using PSIS-LOO.
+
+
+```{r echo=FALSE, warning=FALSE}
+# Model comparisons
+# Pareto smoothed importance-sampling leave-one-out cross-validation (PSIS-LOO) 
+load(file="../stanout/Exp2BGLMNULL2000iter3chains.rda")
+m <- m
+load(file="../stanout/Exp2BGLMTP2000iter3chains.rda")
+m.tp <- m.tp
+load(file="../stanout/Exp2BGLMserial2000iter3chains.rda")
+m.serial <- m.serial
+load(file="../stanout/Exp2BGLMTPserial2000iter3chains.rda")
+m.tp.serial <- m.tp.serial
+load(file="../stanout/Exp2BGLMTPserialinter2000iter3chains.rda")
+m.tp.serial.inter <- m.tp.serial.inter
+
+loo.m <- loo(m)
+loo.m.tp <- loo(m.tp)
+loo.m.serial <- loo(m.serial)
+loo.m.tp.serial <- loo(m.tp.serial)
+loo.m.tp.serial.inter <- loo(m.tp.serial.inter)#, k_threshold = 0.7
+```
+
+
+```{r results='asis'}
+# Difference between expected log pointwise deviance between the two models: difference after taking into account that the second model estimates an additional parameter. The “LOO Information Criterion (LOOIC)”
+M.all <- compare_models(loo.m,loo.m.tp,loo.m.serial,loo.m.tp.serial,loo.m.tp.serial.inter)
+M.all <- as.data.frame(M.all[,c(1:4)])
+M.all$Models <- rownames(M.all)
+rownames(M.all) <- NULL
+M.all <- M.all[,c(5,1:4)]
+M.all %<>% mutate_at(vars(-Models), funs(round(., 2)))
+write_csv(M.all, "../exp2_accuracy_model_comparisons.csv")
+
+```
+
+```{r echo=FALSE,results='asis'}
+# There are a couple of moderate outliers (whose statistics are greater than 0.5),
+# should not have too much of an effect on the resulting model comparison (at least not model 2 and 3)
+M01 <- compare_models(loo.m,loo.m.tp)
+M02 <- compare_models(loo.m,loo.m.serial)
+M03 <- compare_models(loo.m,loo.m.tp.serial)
+M34 <- compare_models(loo.m.tp.serial,loo.m.tp.serial.inter)
+M.diff <- as.data.frame(rbind(M01,M02,M03,M34))
+M.diff$Models <- rownames(M.diff)
+rownames(M.diff) <- NULL
+M.diff <- M.diff[,c(3,1,2)]
+```
+
+The intercept only mode showed predictive performance of $\widehat{elpd}$ = `r printnum(loo.m$elpd_loo)` ($SE$ = `r printnum(loo.m$se_elpd_loo)`). The model with main effects for target and parade type showed the highest predictive performance ($\widehat{elpd}$ = `r printnum(loo.m.tp.serial$elpd_loo)`, $SE$ = `r printnum(loo.m.tp.serial$se_elpd_loo)`). 
+
+Model comparisons showed that adding main effects to the intercept only model increased the predictive performance when adding both effects ($\Delta\widehat{elpd}$ = `r printnum(M.diff[3,]$elpd_diff)`, $SE$ = `r printnum(M.diff[3,]$se)`); also when adding the target effect ($\Delta\widehat{elpd}$ = `r printnum(M.diff[1,]$elpd_diff)`, $SE$ = `r printnum(M.diff[1,]$se)`) or the parade type effect individually ($\Delta\widehat{elpd}$ = `r printnum(M.diff[2,]$elpd_diff)`, $SE$ = `r printnum(M.diff[2,]$se)`). Adding the interaction term to the main effects model rendered lower predictive performance ($\Delta\widehat{elpd}$ = `r printnum(M.diff[4,]$elpd_diff)`, $SE$ = `r printnum(M.diff[4,]$se)`). Therefore, our inference is drawn from the statistical model with simple main effects for target and parade type.
+
+
+```{r include=FALSE}
+# ----------------------
+# Extract conditional posteriors
+samples = get_samples(
+  stan_out = m.tp.serial
+  , pars_to_keep = c("alpha[1]", paste("beta", "[", 1:2, "]", sep=""))
+)
+
+TPprob <- pnorm(samples[samples$Parameter == "beta[1]",]$value)/4*100
+tpmu <- dmode(TPprob)
+tpCI <- HPDI(TPprob, prob = .95)
+
+Preprob <- pnorm((samples[samples$Parameter == "beta[2]",]$value))/4*100
+Premu <- dmode(Preprob)
+PreCI <- HPDI(Preprob, prob = .95)
+```
+
+
+The posterior distribution for the predictor target revealed that responses are more accurate by $\hat{\mu}$=`r printnum(tpmu)`% for lineups that included the target compared to lineups that did not include the target (95% HPDI [`r printnum(tpCI[1])`%, `r printnum(tpCI[2])`%]). The posterior response accuracy for sequential presentations showed a higher accuracy by $\hat{\mu}$=`r printnum(Premu)`% compared to serial presentations (95% HPDI [`r printnum(PreCI[1])`%, `r printnum(PreCI[2])`%]). 
+
+
+
+
+
+```{r include=FALSE}
+pp <- as.data.frame(m.tp.serial, pars = c("(Intercept)", "TP1","serial1")) %>%
+  mutate(alpha = `(Intercept)`, 
+         beta1 = TP1,
+         beta2 = serial1) %>%
+  select(alpha, beta1, beta2) %>%
+  mutate(TP0_Sequential = alpha + beta1 + beta2, 
+         TP1_Sequential = alpha - beta1 + beta2,
+         TP0_Serial = alpha + beta1 - beta2,
+         TP1_Serial = alpha - beta1 - beta2) %>% # + beta2) %>%
+  select(-(alpha:beta2)) %>%
+  gather(TP_Presentation, prob) %>%
+  mutate(prob = pnorm(prob)*100) %>%
+  separate(TP_Presentation, into = c("TP", "Presentation"), sep = "_") %>%
+  mutate(TP = ifelse(TP == "TP0", "Target: absent", "Target: present"))
+
+d.sum <- pp %>% dplyr::group_by(TP, Presentation) %>%
+  dplyr::summarise(M = dmode(prob),
+            lower = HPDI(samples = prob, prob = .95)[1],
+            upper = HPDI(samples = prob, prob = .95)[2]
+          ) %>% ungroup()
+
+```
+
+```{r include=FALSE}
+
+TP0CIseq <- d.sum %>% 
+  filter(TP == "Target: absent" & Presentation == "Sequential") %>% 
+  select(lower, upper) 
+
+TP1CIseq <- d.sum %>% 
+  filter(TP == "Target: present" & Presentation == "Sequential" ) %>% 
+  select(lower, upper) 
+
+TP0CIser <- d.sum %>% 
+  filter(TP == "Target: absent" & Presentation == "Serial" ) %>% 
+  select(lower, upper) 
+
+TP1CIser <- d.sum %>% 
+  filter(TP == "Target: present" & Presentation == "Serial" ) %>% 
+  select(lower, upper) 
+
+ppSeq <- mean(pp[pp$Presentation == "Sequential",]$prob < 10)*100
+ppSer <- mean(pp[pp$Presentation == "Serial",]$prob < 10)*100
+ppdif <- ppSer - ppSeq
+
+p10 <- pp %>% group_by(TP, Presentation) %>%
+  summarise(p10 = mean(prob < 10)*100) %>%
+  ungroup()
+```
+
+
+Chance performance for lineups is 10\%. From these posterior distributions we can infer whether or not the HPDI contains chance-level performance and the posterior probability mass that is below chance-level. In target absent lineups, the 95\% HPDIs show that responses for sequentially presented lineups contained chance-level performance (95% HPDI [`r printnum(pull(TP0CIseq[,1]))`%, `r printnum(pull(TP0CIseq[,2]))`%]) with `r printnum(pull(p10[1,3]))`% of the posterior distribution below chance. Serially presented lineups without targets contain chance-level (95% HPDI [`r printnum(pull(TP0CIser[,1]))`%, `r printnum(pull(TP0CIser[,2]))`%]) with `r printnum(pull(p10[2,3]))`% of the posterior probability mass below chance-level. In target present lineups, responses were consistently above chance-level for sequentially (95% HPDI [`r printnum(pull(TP1CIseq[,1]))`%, `r printnum(pull(TP1CIseq[,2]))`%]) with only `r printnum(pull(p10[3,3]))`% of the posterior probability below chance. For serially presented lineups target present trial were at chance-level (95% HPDI [`r printnum(pull(TP1CIser[,1]))`%, `r printnum(pull(TP1CIser[,2]))`%]) with `r printnum(pull(p10[4,3]))`% of the posterior probability below chance-level performance.
+
+The posterior distribution of the interaction model was used to assess chance-level performance for each parade type. Figure \ref{fig:probdist2} illustrates the probability distributions for each sample duration. For each sample duration we observe a bimodal distribution representing target absent and target present trials, displayed in red and green, respectively. Horizontal bars indicate the 95\% HPDI. For both parade types we can see that the 95\% HPDI contains chance-level performance (10\%).\footnote{Note that we used the interaction model rather than the model with the highest predictive performance to display the posterior probability ranges of all conditions, including each parade type, but also allows for varying differences across the factor levels.} From the posterior distribution we can infer that the posterior probability mass below chance-level (10\%) is `r printnum(ppSer)`% for serial parade types but only `r printnum(ppSeq)`% for sequential parades, thus revealing a better performance for the latter by `r printnum(ppdif)`% less responses below chance-level.
+
+
+```{r warning = FALSE, fig4, fig.pos="!h", fig.align = "center", fig.cap="\\label{fig:probdist2}Posterior probability distribution of inferred response accuracy. The posterior probability is shown by parade type to illustrate the performance against chance-level (10\\%). The dashed line indicates chance-level performance. The horizontal bars indicate 95\\% HPDIs, the range of containing the posterior probability for target absent and target present by sample duration. The accuracy for target absent lineups and target present lineups are displayed in red and green, respectively."}
+pp <- as.data.frame(m.tp.serial.inter, pars = c("(Intercept)", "TP1","serial1", "TP1:serial1")) %>%
+  mutate(alpha = `(Intercept)`, 
+         beta1 = TP1,
+         beta2 = serial1,
+         beta3 = `TP1:serial1`
+         ) %>%
+  select(alpha, beta1, beta2, beta3) %>%
+  mutate(TP0_Sequential = alpha + beta1 + beta2 + beta3, 
+         TP1_Sequential = alpha - beta1 + beta2 - beta3,
+         TP0_Serial = alpha + beta1 - beta2 - beta3,
+         TP1_Serial = alpha - beta1 - beta2 + beta3) %>%
+  select(-(alpha:beta3)) %>%
+  gather(TP_Presentation, prob) %>%
+  mutate(prob = pnorm(prob)*100) %>%
+  separate(TP_Presentation, into = c("TP", "Presentation"), sep = "_") %>%
+  mutate(TP = ifelse(TP == "TP0", "Target: absent", "Target: present"))
+
+chanceexp <- pp %>% 
+  dplyr::group_by(Presentation) %>%
+  dplyr::summarise(M = dmode(prob),
+            lower = HPDI(prob, prob = .95)[1],
+            upper = HPDI(prob, prob = .95)[2]
+          ) %>%
+  ungroup() %>%
+  mutate(TP = "Target: absent",
+         Presentation = ifelse(Presentation == "Sequential", "Parade type:\n Sequential", "Parade type:\n Serial"),
+         prob = .1)
+
+postprob <- pp %>% 
+  mutate(
+    Presentation = ifelse(Presentation == "Sequential", "Parade type:\n Sequential", "Parade type:\n Serial")
+    ) %>%
+  ggplot(aes(x = prob, fill=TP)) + 
+  geom_density(alpha=.2, size = .1, adjust =1) +
+  facet_grid(Presentation~.) +
+  geom_vline(aes(xintercept=10), linetype="dashed", size=.5) +
+  geom_text(data = chanceexp, aes(x=lower+.3, label= paste0(round(lower,2), "%\n"), y = .0275), colour="black", vjust = 1.2,  text=element_text(size=8)) +
+  geom_text(data = chanceexp, aes(x=upper-.5, label= paste0(round(upper,2), "%\n"), y = .0275), colour="black", vjust = 1.2,  text=element_text(size=8)) +
+#  geom_text(data = chanceexp, aes(x=(upper-lower)/2, label= "95% HPDI", y = .04), colour="black", vjust = 1.2,  text=element_text(size=4)) +
+  geom_errorbarh(data = chanceexp, aes(y = .015, xmax = upper, xmin = lower, height = .005)) +
+  theme_apa() +
+  ylab(expression(paste("Posterior probability" ))) + # hat(y)
+  xlab("Accuracy (in %)") +
+  scale_x_continuous(breaks =seq(0, 100, 10)) +
+  scale_fill_manual(values = c("darkred", "darkgreen")) +
+  theme(
+    legend.position = "none",
+    axis.text.y = element_blank(),
+    strip.text.y = element_text(size = 10, angle = 360),
+    axis.ticks = element_blank(),
+    axis.title = element_text(size = 11),
+    axis.text = element_text(size = 10),
+    panel.background = element_rect(fill = "transparent",colour = NA),
+    plot.background = element_rect(fill = "transparent",colour = NA)
+  )
+
+path <- "../plots/exp2_lab_probdist_byexposure.pdf"
+ggsave(path, width = 6, height = 4)
+include_graphics(path, dpi = 400)
+```
+
+
+
+Figure \ref{fig:postacc} shows the posterior probability intervals of the inferred accuracy values with comparisons against chance-level performance for each condition. 
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, cache=FALSE, fig2, fig.pos="h", fig.align = "center", fig.cap="\\label{fig:postacc}Posterior probability intervals of accuracy values. The dots indicate $\\hat{\\mu}$, the most probable parameter value, and error bars show the 95\\% HPDI for each condition interred from the interaction model. Dashed lines indicate chance-level. Chance-level performance was found for conditions in which the HPDI crosses the dashed line."}
+d.sum <- pp %>% dplyr::group_by(TP, Presentation) %>%
+  dplyr::summarise(M = dmode(prob),
+            lower = HPDI(samples = prob, prob = .95)[1],
+            upper = HPDI(samples = prob, prob = .95)[2]
+          ) %>% ungroup()
+
+p.acc <- d.sum %>%
+  mutate(Parade = Presentation) %>%
+  ggplot(aes(y =  M, x = Parade)) + 
+  theme_minimal() +
+  facet_grid(~TP) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), size =.75, width  =.05) +
+  geom_line() +
+  geom_point() +
+  scale_y_continuous(breaks = seq(0,100, 10)) +
+  geom_hline(yintercept = 10, linetype = "dashed", size =.2) +
+  ylab("Posterior accuracy (in %)\n") +
+  xlab("\nParade type") +
+  theme(strip.text = element_text(face = "italic", size = 11),
+        axis.title = element_text(size = 11),
+        axis.text = element_text(size = 10),
+        panel.grid.minor = element_blank())
+
+path <- "../plots/exp2_lab_acc.pdf"
+ggsave(path, width = 6, height = 3.5)
+include_graphics(path, dpi = 400)
+
+```
+
+
+
+## Confidence ratings
+
+Confidence ratings were analysed in Negative Binomial mixed effects models. Models were fitted with maximal random effects structure [@barr2013random; @bates2015parsimonious]; random intercepts were included for different lineup items with slope-adjustments for target order, target (present, absent), parade type (serial, sequential), accuracy (inaccurate, accurate) and all interaction terms.
+
+
+
+```{r echo=FALSE, warning=FALSE}
+# Model comparisons
+# Pareto smoothed importance-sampling leave-one-out cross-validation (PSIS-LOO) 
+load(file="../stanout/Exp2CONFBGLMNULL2000iter3chains.rda")
+m <- m
+
+load(file="../stanout/Exp2CONFBGLMTP2000iter3chains.rda")
+m.tp <- m.tp
+
+load(file="../stanout/Exp2CONFBGLMacc2000iter3chains.rda")
+m.acc <- m.acc
+
+load(file="../stanout/Exp2CONFBGLMserial2000iter3chains.rda")
+m.serial <- m.serial
+
+load(file="../stanout/Exp2CONFBGLMTPaccserial2000iter3chains.rda")
+m.tp.acc.serial <- m.tp.acc.serial
+
+load(file="../stanout/Exp2CONFBGLM2wayinters2000iter3chains.rda")
+m.2.way.inter <- m.2.way.inter
+
+load(file="../stanout/Exp2CONFBGLM3wayinters2000iter3chains.rda")
+m.3.way.inter <- m.3.way.inter
+
+
+loo.m <- loo(m)
+loo.m.acc <- loo(m.acc)
+loo.m.tp <- loo(m.tp)
+loo.m.serial <- loo(m.serial)
+
+loo.m.tp.acc.serial <- loo(m.tp.acc.serial)
+loo.m.2.way.inter <- loo(m.2.way.inter)
+loo.m.3.way.inter <- loo(m.3.way.inter)
+
+```
+
+```{r }
+# Difference between expected log pointwise deviance between the two models: difference after taking into account that the second model estimates an additional parameter. The “LOO Information Criterion (LOOIC)”
+M.all <- compare_models(loo.m, loo.m.acc, loo.m.tp, loo.m.serial, loo.m.tp.acc.serial, loo.m.2.way.inter, loo.m.3.way.inter)
+M.all <- as.data.frame(M.all[,c(1:4)])
+M.all$Models <- rownames(M.all)
+rownames(M.all) <- NULL
+M.all <- M.all[,c(5,1:4)]
+M.all %<>% mutate_at(vars(-Models), funs(round(., 2)))
+write_csv(M.all, "../exp2_confidence_model_comparisons.csv")
+```
+
+
+```{r echo=FALSE,results='asis'}
+# There are a couple of moderate outliers (whose statistics are greater than 0.5),
+# should not have too much of an effect on the resulting model comparison (at least not model 2 and 3)
+M01 <- compare_models(loo.m, loo.m.tp)
+M02 <- compare_models(loo.m, loo.m.acc)
+M03 <- compare_models(loo.m, loo.m.serial)
+M04 <- compare_models(loo.m, loo.m.tp.acc.serial)
+M45 <- compare_models(loo.m.tp.acc.serial, loo.m.2.way.inter)
+M56 <- compare_models(loo.m.2.way.inter, loo.m.3.way.inter)
+
+M.diff <- as.data.frame(rbind(M01,M02,M03,M04,M45,M56))
+M.diff$Models <- rownames(M.diff)
+rownames(M.diff) <- NULL
+M.diff <- M.diff[,c(3,1,2)]
+
+```
+
+
+Confidence ratings were modeled with the predictors accuracy, parade type, target, and all interaction terms. Model predictors were added incrementally to the intercept only model ($\widehat{elpd}$ = `r printnum(loo.m$elpd_loo)`, $SE$ = `r printnum(loo.m$se_elpd_loo)`). Model comparisons revealed negative predictive differences between the intercept only model and the main effects models, for the main effect of target ($\Delta\widehat{elpd}$ = `r printnum(M.diff[1,]$elpd_diff)`, $SE$ = `r printnum(M.diff[1,]$se)`), accuracy ($\Delta\widehat{elpd}$ = `r printnum(M.diff[2,]$elpd_diff)`, $SE$ = `r printnum(M.diff[2,]$se)`), and parade type ($\Delta\widehat{elpd}$ = `r printnum(M.diff[3,]$elpd_diff)`, $SE$ = `r printnum(M.diff[3,]$se)`). Further adding the two-way interaction terms to a model with all main effects rendered lower predictive performance ($\Delta\widehat{elpd}$ = `r printnum(M.diff[5,]$elpd_diff)`, $SE$ = `r printnum(M.diff[5,]$se)`) as well as adding the three-way interaction term to the model with all two-way interactions ($\Delta\widehat{elpd}$ = `r printnum(M.diff[6,]$elpd_diff)`, $SE$ = `r printnum(M.diff[6,]$se)`). Therefore, the intercept only model was found to have the highest predictive performance suggesting that confidence ratings remained consistent across accuracy, target type, and parade type. 
+
+
+```{r}
+samps <- as.data.frame(m, pars = "(Intercept)")
+samps.conf <- exp(samps$`(Intercept)`)
+conf.m <- dmode(samps.conf)
+conf.CI <- HPDI(samples = samps.conf, prob = .95)
+```
+
+The most probable posterior value for confidence ratings was $\hat{\mu}$=`r printnum(conf.m)` (95% HPDI [`r printnum(conf.CI[1])`, `r printnum(conf.CI[2])`]) showing that the participants' confidence about their response accuracy was generally neither low or high (confidence scale 0 to 10). Importantly, confidence ratings remained stable across, target present and target absent lineups, response accuracy, and parade type.
+
+
+
+\newpage
+
+# References
+```{r create_r-references, echo=FALSE}
+r_refs(file = "ref.bib")
+```
+
+\begingroup
+\setlength{\parindent}{-0.5in}
+\setlength{\leftskip}{0.5in}
+
+<div id = "refs"></div>
+\endgroup
